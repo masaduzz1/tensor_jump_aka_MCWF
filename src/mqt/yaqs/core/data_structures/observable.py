@@ -91,9 +91,10 @@ class Observable:
     probability of a computational-basis state on an all-qubit layout. For a
     multi-site local matrix, tensor factors follow the order of ``sites``. For example,
     ``np.kron(a, b)`` with ``sites=[i, j]`` applies ``a`` to site ``i`` and
-    ``b`` to site ``j``. Two-site matrices support nearest-neighbor sites and,
-    on all-qubit chains, the periodic wrap ``{0, length - 1}`` during
-    simulation.
+    ``b`` to site ``j``. Two-site matrices support any pair of distinct sites:
+    nearest neighbors and, on all-qubit chains, the periodic wrap
+    ``{0, length - 1}`` are contracted locally; other pairs use an operator
+    Schmidt decomposition and full overlaps (see :meth:`MPS.local_expect`).
 
     Entropy and Schmidt spectra are MPS diagnostics supported during simulation.
     Schmidt-spectrum result arrays retain the sample and coefficient axes; see

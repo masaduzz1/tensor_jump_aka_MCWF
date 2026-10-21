@@ -1343,12 +1343,6 @@ def test_two_site_local_observable_dimension_mismatch_raises() -> None:
             r"Two-site observable sites must be distinct, got \[1, 1\]",
             id="repeated-site",
         ),
-        pytest.param(
-            Observable(np.eye(4), [0, 2]),
-            [0, 2],
-            "Only nearest-neighbor and periodic-wrap two-site observables are currently implemented",
-            id="non-neighbor",
-        ),
     ],
 )
 def test_local_expect_validates_requested_sites(
@@ -3375,3 +3369,62 @@ def test_measure_shots_shows_progress_by_default(
     monkeypatch.setattr(mps_mod, "available_cpus", lambda: 1)
     assert MPS(length=1, state="zeros").measure_shots(3) == {0: 3}
     assert "Measuring shots" in capsys.readouterr().err
+
+
+def _dense_two_site(length: int, matrix: np.ndarray, i: int, j: int) -> np.ndarray:
+    """Dense operator for ``matrix`` on sites (i, j) of a qubit chain; site 0 is the least-significant qubit."""
+    full = np.zeros((2**length, 2**length), dtype=np.complex128)
+    m4 = matrix.reshape(2, 2, 2, 2)
+    for col in range(2**length):
+        bi, bj = (col >> i) & 1, (col >> j) & 1
+        for oi in range(2):
+            for oj in range(2):
+                amp = m4[oi, oj, bi, bj]
+                if amp != 0:
+                    row = col & ~(1 << i) & ~(1 << j) | (oi << i) | (oj << j)
+                    full[row, col] += amp
+    return full
+
+
+_X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
+_Y = np.array([[0, -1j], [1j, 0]], dtype=np.complex128)
+_Z = np.diag([1.0, -1.0]).astype(np.complex128)
+_SP = np.array([[0, 1], [0, 0]], dtype=np.complex128)
+
+
+@pytest.mark.parametrize("sites", [[0, 2], [2, 0], [1, 4], [0, 4], [3, 1]])
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        pytest.param(np.kron(_X, _X), id="XX"),
+        pytest.param(np.kron(_Z, _Y), id="ZY"),
+        pytest.param(np.kron(_SP, _SP.T) + np.kron(_SP.T, _SP), id="hopping"),
+        pytest.param(np.kron(_X, _Z) + 0.3 * np.kron(_Y, _Y) - 0.7 * np.kron(_Z, np.eye(2)), id="non-product"),
+    ],
+)
+def test_long_range_local_expect_matches_dense(sites: list[int], matrix: np.ndarray) -> None:
+    """Two-site observables on non-neighboring sites agree with a dense state-vector calculation."""
+    length = 6
+    state = MPS(length, state="random", pad=4)
+    state.normalize("B")
+    psi = state.to_vec()
+    expected = psi.conj() @ _dense_two_site(length, matrix, *sites) @ psi
+    obs = Observable(matrix, sites)
+    for center in (None, 0, 3, length - 1):
+        trial = copy.deepcopy(state)
+        if center is None:
+            trial.set_center(None)
+        else:
+            trial.shift_center_to(center)
+        np.testing.assert_allclose(trial.local_expect(obs, sites), expected, atol=1e-10)
+        np.testing.assert_allclose(trial.expect(obs), expected.real, atol=1e-10)
+
+
+def test_long_range_expect_is_real() -> None:
+    """expect() returns the real value of a Hermitian non-neighboring observable."""
+    length = 5
+    state = MPS(length, state="random", pad=4)
+    state.normalize("B")
+    psi = state.to_vec()
+    expected = (psi.conj() @ _dense_two_site(length, np.kron(_X, _X), 0, 3) @ psi).real
+    np.testing.assert_allclose(state.expect(Observable(np.kron(_X, _X), [0, 3])), expected, atol=1e-10)

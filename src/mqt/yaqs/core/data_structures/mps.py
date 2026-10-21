@@ -1369,8 +1369,7 @@ class MPS:
             is_neighbor = abs(i - j) == 1
             is_periodic_wrap = self.length > 2 and {i, j} == {0, self.length - 1}
             if not is_neighbor and not is_periodic_wrap:
-                msg = "Only nearest-neighbor and periodic-wrap two-site observables are currently implemented."
-                raise ValueError(msg)
+                return self._long_range_local_expect(operator, i, j)
         else:
             msg = "Local observable must be one-site or nearest-neighbor two-site."
             raise ValueError(msg)
@@ -1591,9 +1590,84 @@ class MPS:
         Returns:
             The scalar contraction :math:`\langle\mathrm{bra}|O|\mathrm{ket}\rangle`.
         """
+        sites = observable.sites
+        if (
+            observable.interaction == 2
+            and isinstance(sites, list)
+            and len(sites) == 2
+            and abs(sites[0] - sites[1]) > 1
+            and not (self.length > 2 and set(sites) == {0, self.length - 1})
+        ):
+            return self._long_range_mixed_expectation(bra, np.asarray(observable.matrix, dtype=np.complex128), *sites)
         ket_with_op = copy.deepcopy(self)
         ket_with_op.apply_local(observable)
         return bra.scalar_product(ket_with_op)
+
+    def _long_range_mixed_expectation(
+        self, bra: MPS, matrix: NDArray[np.complex128], first_site: int, second_site: int
+    ) -> np.complex128:
+        r"""Compute :math:`\langle\mathrm{bra}|O_{ij}|\mathrm{ket}\rangle` for two sites that are not neighbors.
+
+        The two-site matrix (tensor factors ordered as ``first_site``, ``second_site``) is split by an
+        operator Schmidt decomposition :math:`O=\sum_k A_k\otimes B_k` (at most :math:`d^2` terms, one for a
+        product such as :math:`X\otimes X`). Each term is applied as two one-site operators to a copy of
+        ``self`` and contracted with ``bra``. Cost per term: one full overlap, :math:`O(L\chi^3)`.
+
+        Args:
+            bra: Bra MPS (left vector).
+            matrix: Two-site operator of shape ``(d_i d_j, d_i d_j)``.
+            first_site: Site of the first tensor factor.
+            second_site: Site of the second tensor factor.
+
+        Returns:
+            The scalar contraction.
+
+        Raises:
+            ValueError: If the matrix shape does not match the site dimensions.
+        """
+        d_i = self.tensors[first_site].shape[0]
+        d_j = self.tensors[second_site].shape[0]
+        if matrix.shape != (d_i * d_j, d_i * d_j):
+            msg = f"Two-site observable matrix shape {matrix.shape} does not match site dimensions {d_i} and {d_j}."
+            raise ValueError(msg)
+        # O[(a b),(c d)] -> O'[(a c),(b d)] so that an SVD separates the two sites.
+        reshuffled = matrix.reshape(d_i, d_j, d_i, d_j).transpose(0, 2, 1, 3).reshape(d_i * d_i, d_j * d_j)
+        u, s, vh = np.linalg.svd(reshuffled)
+        total = np.complex128(0.0)
+        for k in np.flatnonzero(s > 1e-14 * max(s[0], 1e-300)):
+            ket = copy.deepcopy(self)
+            a_k = s[k] * u[:, k].reshape(d_i, d_i)
+            b_k = vh[k].reshape(d_j, d_j)
+            ket.tensors[first_site] = oe.contract("ab,bcd->acd", a_k, ket.tensors[first_site])
+            ket.tensors[second_site] = oe.contract("ab,bcd->acd", b_k, ket.tensors[second_site])
+            ket._orthogonality_center = None  # non-unitary local factors break the canonical form
+            total += bra.scalar_product(ket)
+        return np.complex128(total)
+
+    def _long_range_local_expect(self, operator: Observable, first_site: int, second_site: int) -> np.complex128:
+        """Expectation value of a two-site observable on sites that are not neighbors.
+
+        Uses :meth:`_long_range_mixed_expectation` with ``bra = self``. For a Hermitian operator the exact
+        value is real, but the full overlap carries roundoff of order ``1e-8`` at large bond dimension,
+        which the strict realness check in :func:`validate_real` (``atol=1e-12``) would reject. The
+        imaginary part is therefore dropped if it is below ``1e-6 * max(1, |real|)``; a larger one is
+        returned unchanged so that the realness check still reports it. (:class:`Observable` only
+        accepts Hermitian matrices, but the check is kept for direct callers.)
+
+        Args:
+            operator: Two-site observable.
+            first_site: Site of the first tensor factor.
+            second_site: Site of the second tensor factor.
+
+        Returns:
+            The expectation value.
+        """
+        matrix = np.asarray(operator.matrix, dtype=np.complex128)
+        value = self._long_range_mixed_expectation(self, matrix, first_site, second_site)
+        hermitian = matrix.shape[0] == matrix.shape[1] and np.allclose(matrix, matrix.conj().T, atol=1e-12)
+        if hermitian and abs(value.imag) <= 1e-6 * max(1.0, abs(value.real)):
+            return np.complex128(value.real)
+        return value
 
     def _evaluate_observables(
         self,
