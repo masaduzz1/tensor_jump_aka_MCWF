@@ -7,6 +7,8 @@ the per-trajectory array as well (YAQS itself is unchanged). Only <Z_0> is measu
 Saves data/chi_trace_<stem>.npz and fig/chi_trace_<stem>.{pdf,png}: mean, 10-90% band, and max over
 trajectories of the largest bond dimension vs t, plus the steady-state histogram.
 
+Works on any branch (only the one-site <Z_0> is measured).
+
 Usage:
     conda activate tensorjump
     python chi_trace.py --Jx 3 --Jy 2 --num-traj 60 --max-bond-dim 128

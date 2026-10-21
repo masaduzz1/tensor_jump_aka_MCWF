@@ -8,6 +8,8 @@ exact propagator exp(L dt)), independent of YAQS.
 
 Outputs data/check_L6_*.npz and fig/check_L6_*.png (time traces of <Z_0>, <Z_0Z_1>, <X_0X_1>).
 
+Works on any branch (only one-site and nearest-neighbour observables are measured).
+
 Usage:
     conda activate tensorjump
     python check_L6_solvers.py --num-traj 500

@@ -10,6 +10,12 @@ data in data-dd-heisenberg/data-exact (gamma=1), XX correlators are converged
 to 1e-2 by t~4 for most (Jx, Jy) and by t~8.2 in the slowest cases, so
 T=10/gamma is the default.
 
+Requires the "Asad" branch of masaduzz1/tensor_jump_aka_MCWF (YAQS installed from that clone).
+Correlators <P_i P_j> are measured for all pairs, including non-neighbouring ones, and only that branch's
+MPS.local_expect supports |i - j| > 1. On upstream YAQS / "main" the run fails with "Only nearest-neighbor
+and periodic-wrap two-site observables are currently implemented." (The copy of this script outside the
+repo patches MPS.local_expect at runtime instead, and works on any branch.)
+
 Usage:
     conda activate tensorjump
     python xyz_ad_steady_state.py --Jx 1.0 --Jy 0.0 --num-traj 300

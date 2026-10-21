@@ -8,6 +8,11 @@ Steady-state correlators of
 computed with the YAQS tensor jump method (TJM), for L = 12 (compared with exact data) and L = 40.
 In YAQS this is `Hamiltonian.heisenberg(L, -Jx/2, -Jy/2, -Jz/2, bc="periodic")` with `"raising"` noise.
 
+**Branch:** run `xyz_ad_steady_state.py` on the `Asad` branch. It measures `<P_i P_j>` for non-neighbouring
+sites, which only this branch supports (on `main`/upstream YAQS it raises "Only nearest-neighbor and periodic-wrap
+two-site observables are currently implemented"). `chi_trace.py` and `check_L6_solvers.py` work on any branch; the
+remaining scripts only read saved data.
+
 Long-range two-site observables `<A_i B_j>` (|i - j| > 1) use `MPS.local_expect` on this branch, which
 evaluates them by an operator Schmidt decomposition and full overlaps (see `src/mqt/yaqs/core/data_structures/mps.py`).
 
